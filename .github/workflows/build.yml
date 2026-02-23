@@ -18,8 +18,8 @@ on:
 
 jobs:
   build:
-    name: Build macOS App
-    runs-on: macos-15
+    name: Build macOS App (Apple Silicon)
+    runs-on: macos-15-xlarge  # Apple Silicon (M-series) runner
 
     steps:
       - name: Checkout
@@ -34,21 +34,33 @@ jobs:
           swift --version
           xcodebuild -project LinuxVMCreator.xcodeproj -list
 
+      - name: Verify ARM64 runner
+        run: |
+          arch
+          uname -m
+          [[ "$(uname -m)" == "arm64" ]] || { echo "Error: not running on Apple Silicon"; exit 1; }
+
       - name: Build
         run: |
           xcodebuild build \
             -project LinuxVMCreator.xcodeproj \
             -scheme LinuxVMCreator \
             -configuration Release \
-            -destination "platform=macOS" \
+            -destination "platform=macOS,arch=arm64" \
             -derivedDataPath build/DerivedData \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=NO \
+            EXCLUDED_ARCHS=x86_64 \
             CODE_SIGNING_ALLOWED=NO \
             | xcpretty || xcodebuild build \
               -project LinuxVMCreator.xcodeproj \
               -scheme LinuxVMCreator \
               -configuration Release \
-              -destination "platform=macOS" \
+              -destination "platform=macOS,arch=arm64" \
               -derivedDataPath build/DerivedData \
+              ARCHS=arm64 \
+              ONLY_ACTIVE_ARCH=NO \
+              EXCLUDED_ARCHS=x86_64 \
               CODE_SIGNING_ALLOWED=NO
 
       - name: Locate built app
@@ -61,14 +73,14 @@ jobs:
       - name: Create ZIP archive
         run: |
           cd "$(dirname "${{ steps.locate.outputs.app_path }}")"
-          zip -qr "$GITHUB_WORKSPACE/LinuxVMCreator-unsigned.zip" LinuxVMCreator.app
-          echo "Archive size: $(du -sh "$GITHUB_WORKSPACE/LinuxVMCreator-unsigned.zip" | cut -f1)"
+          zip -qr "$GITHUB_WORKSPACE/LinuxVMCreator-arm64-unsigned.zip" LinuxVMCreator.app
+          echo "Archive size: $(du -sh "$GITHUB_WORKSPACE/LinuxVMCreator-arm64-unsigned.zip" | cut -f1)"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LinuxVMCreator-unsigned
-          path: LinuxVMCreator-unsigned.zip
+          name: LinuxVMCreator-arm64-unsigned
+          path: LinuxVMCreator-arm64-unsigned.zip
           retention-days: 30
 
       - name: Create GitHub Release
@@ -91,7 +103,7 @@ jobs:
 
             ### Requirements
             - macOS 14.0 (Sonoma) or later
-            - Apple Silicon (M1 or newer)
-          files: LinuxVMCreator-unsigned.zip
+            - **Apple Silicon (M1 or newer) — ARM64 only, x86_64 not supported**
+          files: LinuxVMCreator-arm64-unsigned.zip
           draft: false
           prerelease: false
