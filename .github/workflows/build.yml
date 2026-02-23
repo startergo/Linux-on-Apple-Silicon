@@ -5,6 +5,16 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 1.0.0)"
+        required: true
+        default: "1.0.0"
+      release_notes:
+        description: "Release notes"
+        required: false
+        default: ""
 
 jobs:
   build:
@@ -29,12 +39,59 @@ jobs:
           xcodebuild build \
             -project LinuxVMCreator.xcodeproj \
             -scheme LinuxVMCreator \
-            -configuration Debug \
+            -configuration Release \
             -destination "platform=macOS" \
+            -derivedDataPath build/DerivedData \
             CODE_SIGNING_ALLOWED=NO \
             | xcpretty || xcodebuild build \
               -project LinuxVMCreator.xcodeproj \
               -scheme LinuxVMCreator \
-              -configuration Debug \
+              -configuration Release \
               -destination "platform=macOS" \
+              -derivedDataPath build/DerivedData \
               CODE_SIGNING_ALLOWED=NO
+
+      - name: Locate built app
+        id: locate
+        run: |
+          APP=$(find build/DerivedData -name "LinuxVMCreator.app" -type d | head -1)
+          echo "app_path=$APP" >> $GITHUB_OUTPUT
+          echo "Found: $APP"
+
+      - name: Create ZIP archive
+        run: |
+          cd "$(dirname "${{ steps.locate.outputs.app_path }}")"
+          zip -qr "$GITHUB_WORKSPACE/LinuxVMCreator-unsigned.zip" LinuxVMCreator.app
+          echo "Archive size: $(du -sh "$GITHUB_WORKSPACE/LinuxVMCreator-unsigned.zip" | cut -f1)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LinuxVMCreator-unsigned
+          path: LinuxVMCreator-unsigned.zip
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          name: LinuxVMCreator v${{ github.event.inputs.version }}
+          body: |
+            ## LinuxVMCreator v${{ github.event.inputs.version }}
+
+            ${{ github.event.inputs.release_notes }}
+
+            ### Installation
+            > ⚠️ This build is **unsigned**. To run it:
+            > ```
+            > xattr -dr com.apple.quarantine LinuxVMCreator.app
+            > ```
+            > Or go to **System Settings → Privacy & Security** and click "Open Anyway".
+
+            ### Requirements
+            - macOS 14.0 (Sonoma) or later
+            - Apple Silicon (M1 or newer)
+          files: LinuxVMCreator-unsigned.zip
+          draft: false
+          prerelease: false
